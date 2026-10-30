@@ -100,6 +100,68 @@ test('vault stores tokens, keeps the account, and clears them independently', ()
   assert.equal(store.isConfigured(), true)
 })
 
+test('vault stores several accounts, switches between them and promotes a survivor', () => {
+  const dir = tempDir()
+  const store = new VaultStore({ dataDir: dir })
+  store.configure({ clientId: 'id-123456', clientSecret: 'secret' })
+  store.setToken(
+    { accessToken: 'token-octocat', refreshToken: 'refresh-octocat', expiresAt: 0 },
+    { login: 'octocat', name: 'The Octocat', avatarUrl: 'https://example.test/o.png' },
+    ['repo']
+  )
+  store.setToken(
+    { accessToken: 'token-hubot', refreshToken: 'refresh-hubot', expiresAt: 0 },
+    { login: 'hubot', name: 'Hubot', avatarUrl: 'https://example.test/h.png' },
+    ['repo', 'read:user']
+  )
+
+  const two = store.accounts()
+  assert.deepEqual(two.map((entry) => entry.login).sort(), ['hubot', 'octocat'])
+  assert.equal(store.activeLogin(), 'hubot', 'the newest login becomes active')
+  assert.equal(store.token('octocat').accessToken, 'token-octocat')
+  assert.equal(store.token().accessToken, 'token-hubot')
+  assert.equal(JSON.stringify(store.accounts()).includes('token-octocat'), false, 'no token leaks from accounts()')
+
+  const switched = store.switchAccount('octocat')
+  assert.equal(switched.activeLogin, 'octocat')
+  assert.equal(switched.account.login, 'octocat')
+  assert.equal(switched.connected, true)
+  assert.equal(store.token().accessToken, 'token-octocat')
+
+  // A fresh instance decrypts every account, not just the legacy mirror.
+  const reopened = new VaultStore({ dataDir: dir })
+  assert.equal(reopened.activeLogin(), 'octocat')
+  assert.deepEqual(reopened.accounts().map((entry) => entry.login).sort(), ['hubot', 'octocat'])
+
+  assert.throws(() => store.switchAccount('nobody'), (error) => error.code === 'E_NOT_FOUND')
+
+  const afterRemoval = store.removeAccount('octocat')
+  assert.equal(afterRemoval.activeLogin, 'hubot', 'removing the active account promotes the survivor')
+  assert.deepEqual(afterRemoval.accounts.map((entry) => entry.login), ['hubot'])
+
+  const empty = store.removeAccount('hubot')
+  assert.equal(empty.connected, false)
+  assert.deepEqual(empty.accounts, [])
+  assert.equal(store.isConfigured(), true, 'the OAuth App pair survives account removal')
+})
+
+test('a legacy single-token vault is still read and migrates on write', () => {
+  const dir = tempDir()
+  const store = new VaultStore({ dataDir: dir })
+  store.configure({ clientId: 'id-123456', clientSecret: 'secret' })
+  // Simulate a vault written by 0.8: token at the top level only.
+  store.setToken({ accessToken: 'legacy-token', expiresAt: 0 }, { login: 'legacy' }, ['repo'])
+  const raw = store.read()
+  delete raw.accounts
+  delete raw.activeLogin
+  store.write(raw)
+
+  const reopened = new VaultStore({ dataDir: dir })
+  assert.equal(reopened.status().connected, true)
+  assert.equal(reopened.activeLogin(), 'legacy')
+  assert.equal(reopened.token().accessToken, 'legacy-token')
+})
+
 test('vault reports a wrong master key instead of silently losing data', () => {
   const dir = tempDir()
   const store = new VaultStore({ dataDir: dir })

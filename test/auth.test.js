@@ -57,6 +57,29 @@ test('concurrent callers share one token refresh', async () => {
   assert.equal(store.status().account.login, 'octocat')
 })
 
+test('a refresh updates only the active account', async () => {
+  const store = expiredStore()
+  store.setToken(
+    { accessToken: 'hubot-access', expiresAt: Date.now() + 3600 * 1000 },
+    { login: 'hubot', id: 2, name: 'Hubot' },
+    ['repo']
+  )
+  assert.equal(store.activeLogin(), 'hubot')
+  store.switchAccount('octocat')
+
+  const calls = []
+  const fetchImpl = async (url) => {
+    calls.push(String(url))
+    return jsonResponse({ access_token: 'new-access', token_type: 'bearer', scope: 'repo', refresh_token: 'new-refresh', expires_in: 28800 })
+  }
+
+  assert.equal(await requireAccessToken(store, { fetchImpl }), 'new-access')
+  assert.equal(calls.length, 1)
+  assert.equal(store.activeLogin(), 'octocat', 'refreshing must not switch the active account')
+  assert.equal(store.token('octocat').accessToken, 'new-access')
+  assert.equal(store.token('hubot').accessToken, 'hubot-access', 'the other account keeps its token')
+})
+
 test('a stored unexpired token is returned without any network call', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gho-auth-'))
   const store = new VaultStore({ dataDir })

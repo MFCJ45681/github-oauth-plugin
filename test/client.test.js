@@ -31,7 +31,14 @@ function loadBundle () {
         useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
         useEffect: () => {},
         useCallback: (fn) => fn,
+        useRef: (initial) => ({ current: initial }),
         useMemo: (fn) => fn()
+      }
+    }
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') {
+      return {
+        Menu: (props) => ({ type: 'Menu', props }),
+        IconChevronDownOutlineRegular: (props) => ({ type: 'Chevron', props })
       }
     }
     throw new Error(`unexpected require(${name})`)
@@ -62,7 +69,7 @@ test('apply registers the tab definition, pane slot and settings section', () =>
 
   factoryExports.apply(ctx)
 
-  assert.equal(effects.length, 3)
+  assert.equal(effects.length, 4)
   assert.equal(appended.length, 1, 'apply injects the panel style once')
   assert.equal(appended[0].id, 'dsh-github-oauth-style')
   assert.match(appended[0].textContent, /\.gho-panel/)
@@ -75,7 +82,7 @@ test('apply registers the tab definition, pane slot and settings section', () =>
   assert.equal(tabs[0].guide[0].order, 40)
   assert.equal(tabs[0].guide[0].title(), 'GitHub')
 
-  assert.equal(slots.length, 2)
+  assert.equal(slots.length, 3)
   assert.equal(slots[0].definition.name, 'sidebar.right.pane.tab')
   assert.equal(slots[0].definition.key, '@local/github-oauth')
   assert.equal(typeof slots[0].component, 'function', 'the pane renders a React component')
@@ -85,6 +92,41 @@ test('apply registers the tab definition, pane slot and settings section', () =>
   assert.equal(slots[1].definition.order, 60)
   assert.equal(slots[1].definition.label(), 'GitHub')
   assert.equal(typeof slots[1].component, 'function', 'the settings section renders a React component')
+
+  assert.equal(slots[2].definition.name, 'conversation.input.left')
+  assert.equal(slots[2].definition.id, 'github-accounts')
+  assert.equal(slots[2].definition.order, 40)
+  assert.equal(typeof slots[2].component, 'function', 'the composer control renders a React component')
+})
+
+test('the composer account menu renders a trigger and a login entry', () => {
+  const { factoryExports } = loadBundle()
+  const components = {}
+  factoryExports.apply({
+    sidebarRightTabs: { register: () => () => {} },
+    slots: {
+      register: (definition, candidate) => {
+        if (definition.name === 'conversation.input.left') components.composer = candidate
+        return () => {}
+      },
+      inject: (_key, callback) => callback()
+    },
+    effect: (run) => run()
+  })
+  assert.equal(typeof components.composer, 'function')
+  const tree = components.composer({})
+  assert.equal(tree.type, 'span')
+  assert.equal(tree.props.className, 'gho-cm')
+  const kids = tree.children[0]
+  const menu = kids[0]
+  assert.equal(typeof menu.type, 'function', 'the primitive Menu component is used')
+  assert.equal(menu.props.side, 'top')
+  assert.equal(menu.props.portal, true)
+  const ids = menu.props.items.map((item) => item.id)
+  assert.deepEqual(ids, ['add'], 'an empty vault only offers the login entry')
+  assert.equal(menu.props.anchor.type, 'button')
+  const text = JSON.stringify(menu.props.anchor)
+  assert.match(text, /连接 GitHub/)
 })
 
 test('the panel component renders the unconfigured state', () => {

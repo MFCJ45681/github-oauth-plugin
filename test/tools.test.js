@@ -73,9 +73,40 @@ function makeEnv () {
 test('registers the full github_* tool surface', () => {
   const { tools } = makeEnv()
   assert.deepEqual(Object.keys(tools).sort(), [
+    'github_account_remove', 'github_account_switch', 'github_accounts',
     'github_api_request', 'github_auth_logout', 'github_auth_setup', 'github_auth_start', 'github_auth_status',
     'github_create_issue', 'github_file', 'github_issues', 'github_preferences', 'github_pulls', 'github_repo', 'github_search'
   ])
+})
+
+test('account tools list, switch and remove stored accounts', async () => {
+  const { tools, store } = makeEnv()
+  store.setToken({ accessToken: 'token-a' }, { login: 'octocat', name: 'The Octocat', avatarUrl: 'https://a.test/o.png' }, ['repo'])
+  store.setToken({ accessToken: 'token-b' }, { login: 'hubot', name: 'Hubot', avatarUrl: 'https://a.test/h.png' }, ['repo', 'read:user'])
+
+  const listed = await tools.github_accounts.execute({}, {})
+  assert.equal(listed.ok, true)
+  assert.equal(listed.data.activeLogin, 'hubot')
+  assert.deepEqual(listed.data.accounts.map((entry) => entry.login).sort(), ['hubot', 'octocat'])
+  assert.match(listed.text, /当前账户/)
+  assert.equal(JSON.stringify(listed.data).includes('token-b'), false, 'tokens never leak into tool output')
+
+  const switched = await tools.github_account_switch.execute({ login: 'octocat' }, {})
+  assert.equal(switched.ok, true)
+  assert.equal(store.activeLogin(), 'octocat')
+  assert.match(switched.text, /@octocat/)
+
+  const unknown = await tools.github_account_switch.execute({ login: 'nobody' }, {})
+  assert.equal(unknown.ok, false)
+  assert.equal(unknown.code, 'E_NOT_FOUND')
+
+  const removed = await tools.github_account_remove.execute({ login: 'octocat' }, {})
+  assert.equal(removed.ok, true)
+  assert.equal(store.activeLogin(), 'hubot')
+
+  const missing = await tools.github_account_remove.execute({ login: 'octocat' }, {})
+  assert.equal(missing.ok, false)
+  assert.equal(missing.code, 'E_NOT_FOUND')
 })
 
 test('auth tools work out of the box with the built-in OAuth App', async () => {

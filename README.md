@@ -1,13 +1,14 @@
 # @local/github-oauth
 
-> 当前版本 **0.8.0**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+> 当前版本 **0.9.0**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 GitHub，把 `client_secret` 与 access token **AES-256-GCM 加密后落盘**，并同时提供：
 
-- 对话内的 `github_*` 原生工具（12 个）
+- 对话内的 `github_*` 原生工具（15 个）
+- 输入框下方的**账户下拉**（紧挨权限管理）：一键切换已连接的多份 GitHub 账户
 - **内置默认 OAuth App**：装好就能登录，不必先去 GitHub 建应用；也可随时换成自己的应用
 - 右侧栏 **GitHub** 面板（登录状态 / 仓库速览）
-- **设置 → GitHub** 页面：更换 OAuth App、切换账号、管理默认仓库与固定仓库
+- **设置 → GitHub** 页面：更换 OAuth App、切换/移除账户、管理默认仓库与固定仓库
 - 同源 HTTP 路由 `/plugins/github-oauth/*`（面板和工具共用）
 
 ```
@@ -16,7 +17,7 @@ github-oauth-plugin/     ← 仓库根就是插件包，可直接被 dsh plugin 
 ├── scripts/configure.js
 ├── package.json
 ├── cordis.patch.yml
-├── test/                ← node:test，39 个用例
+├── test/                ← node:test，45 个用例
 ├── install.sh
 └── uninstall.sh
 ```
@@ -97,7 +98,10 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 | `github_auth_status` | 配置/连接状态、scopes、凭据库位置 |
 | `github_auth_setup` | 选择 OAuth App：`{ useDefault: true }` 用内置默认应用，或传 `clientId` + `clientSecret` 保存自定义应用（secret 可回退 `GITHUB_OAUTH_CLIENT_SECRET`） |
 | `github_auth_start` | 生成一次性 state，返回授权链接（10 分钟、单次有效） |
-| `github_auth_logout` | 清除 token，保留 OAuth App 凭据 |
+| `github_auth_logout` | 注销**全部**账户（保留 OAuth App 凭据）；只移除某一个用 `github_account_remove` |
+| `github_accounts` | 列出已保存的账户与当前账户（不含 token） |
+| `github_account_switch` | 切换当前账户：`{ login }`；之后的工具调用都用该账户的 token |
+| `github_account_remove` | 移除某个账户：`{ login }`；移除当前账户时自动提升下一个 |
 | `github_api_request` | 任意 REST 调用，非 2xx 返回 `ok:false` 而非抛错 |
 | `github_repo` | 仓库元数据 + 仓库上下文（README 摘要与顶层文件树） |
 | `github_issues` | issue 列表（自动过滤 PR） |
@@ -124,6 +128,16 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 
 失败也返回 `ok:false`（`E_NOT_CONFIGURED` / `E_NOT_CONNECTED` / `E_RATE_LIMIT` / `E_GITHUB` …）并附带中文提示，不会中断多工具回合。
 
+## 多账户（0.9）
+
+- **入口**：输入框工具行（权限管理右侧）的 `@login ▾` 下拉；**设置 → GitHub** 里也有同样的账户列表。
+- **添加**：composer 下拉 →「添加其他账户…」或侧边栏面板的登录按钮，走同一个 OAuth 流程；新账户成为当前账户。
+- **切换**：下拉里选另一个账户，立即生效，不需要重新登录；已保存的 token 不重新授权。
+- **存储**：vault 里按 login 保存 `accounts.<login> = { token（加密）, 账号快照, scopes, connectedAt }`，
+  顶层仍保留活动账户的镜像字段以兼容 0.8 的旧 vault（首次写入自动迁移）。
+- **刷新**：access token 过期时只刷新**当前账户**，且不会切换账户；各账户的 refresh token 互不影响。
+- **移除**：设置页或 `github_account_remove`；移除当前账户后自动切到剩下的一个，全部移除即断开连接。
+
 ## HTTP 路由
 
 均在同源 `/plugins/github-oauth` 下（仅本机服务，无额外认证层）：
@@ -137,6 +151,9 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 | `GET /callback` | 换 code、取账号、加密存 token，渲染中文结果页 |
 | `POST /logout` | 清除 token |
 | `POST /config` | `{ mode: "default" }` 切回内置应用，`{ mode: "custom", clientId, clientSecret }` 保存并启用自定义应用（校验同源） |
+| `GET /accounts` | 已保存账户与 `activeLogin`（不含 token） |
+| `POST /accounts/switch` | `{ login }` 切换当前账户（校验同源） |
+| `POST /accounts/remove` | `{ login }` 移除账户（校验同源） |
 | `GET /repos` | 最近仓库列表（与 `/bootstrap` 共享 30 秒缓存） |
 | `GET /preferences` | 默认仓库与固定仓库 |
 | `POST /preferences` | 改写上述偏好（校验同源与 `owner/name` 格式） |
@@ -166,7 +183,7 @@ CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流�
 
 ```bash
 npm test          # 等价于 node --test test/*.test.js
-# 39 pass
+# 45 pass
 ```
 
 覆盖：AES-GCM 往返/篡改/AAD、scrypt 派生、磁盘无明文与 `0600`、主密钥不匹配、state 一次性/过期/上限、

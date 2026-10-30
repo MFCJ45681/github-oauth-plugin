@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.0
+
+多账户：同一份 DSH 里可以保存多个 GitHub 账号，并在输入框旁边直接切换。
+
+### 新增
+
+- **输入框账户下拉**：注册在 `conversation.input.left`，紧挨权限管理；显示当前账号头像与 `@login`，
+  展开后可切换账户或「添加其他账户…」。新账户授权完成后自动成为当前账户。
+- **设置 → GitHub → 已保存的 GitHub 账户**：列出全部账户（当前 / 切换 / 移除），与下拉共用状态。
+- 3 个工具（合计 15）：`github_accounts`、`github_account_switch`、`github_account_remove`；
+  `github_auth_logout` 现在表示「注销全部账户」。
+- 3 条同源路由：`GET /accounts`、`POST /accounts/switch`、`POST /accounts/remove`。
+- vault 账户模型：`accounts[login] = { token（加密）, 账号快照, scopes, connectedAt }` + `activeLogin`；
+  旧版单 token vault 读取时自动迁移，写回后保留活动账户的顶层镜像字段。
+
+### 修复
+
+- **删除最后一个账户后仍然显示已连接**：`removeAccount` 清空 `accounts` 后，`mirrorActive` 又从顶层
+  镜像字段重建了单账户。现在清空账户时一并删掉 `token/account/scopes/connectedAt`。
+- **刷新可能串号**：token 刷新改为只写当前账户（`{ activate: false }`），不再依赖顶层字段，也就不会
+  把 refresh 结果写到别的账户上。
+- 并发工具共享同一次刷新时，各自拿到的仍是**当前账户**的 access token。
+
+### 测试
+
+- 45 个用例（+6）：多账户存取/切换/移除/最后账户删除、旧 vault 迁移、刷新只影响当前账户、
+  `/accounts` 系列路由（含跨站 403 与 404）、composer 下拉渲染。
+
 ## 0.8.0
 
 一次以「更快、更少往返」为目标的版本。没有破坏性变更：已有 vault、偏好和登录态直接沿用。

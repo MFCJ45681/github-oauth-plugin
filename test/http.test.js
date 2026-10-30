@@ -201,6 +201,67 @@ test('preferences are readable, same-origin writable and validated', async (t) =
   assert.deepEqual(clearedBody.preferences.pinnedRepos, [])
 })
 
+test('accounts can be listed, switched and removed over the same-origin API', async (t) => {
+  const env = buildEnv()
+  const { routes } = createRoutes({ store: env.store, states: env.states, fetchImpl: env.github.fetchImpl })
+  const server = await serve(routes)
+  t.after(() => server.close())
+  const origin = `http://127.0.0.1:${server.port}`
+  env.store.setToken({ accessToken: 'token-octocat' }, { login: 'octocat', name: 'The Octocat' }, ['repo'])
+  env.store.setToken({ accessToken: 'token-hubot' }, { login: 'hubot', name: 'Hubot' }, ['repo', 'read:user'])
+
+  const listed = await (await fetch(`${origin}${BASE}/accounts`)).json()
+  assert.equal(listed.ok, true)
+  assert.equal(listed.activeLogin, 'hubot')
+  assert.deepEqual(listed.accounts.map((entry) => entry.login).sort(), ['hubot', 'octocat'])
+  assert.equal(JSON.stringify(listed).includes('token-hubot'), false, 'the API never returns tokens')
+
+  const cross = await fetch(`${origin}${BASE}/accounts/switch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'https://evil.test' },
+    body: JSON.stringify({ login: 'octocat' })
+  })
+  assert.equal(cross.status, 403)
+
+  const switched = await fetch(`${origin}${BASE}/accounts/switch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin },
+    body: JSON.stringify({ login: 'octocat' })
+  })
+  assert.equal(switched.status, 200)
+  assert.equal((await switched.json()).status.activeLogin, 'octocat')
+
+  const unknown = await fetch(`${origin}${BASE}/accounts/switch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin },
+    body: JSON.stringify({ login: 'nobody' })
+  })
+  assert.equal(unknown.status, 404)
+  assert.equal((await unknown.json()).code, 'E_NOT_FOUND')
+
+  const missingLogin = await fetch(`${origin}${BASE}/accounts/switch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin },
+    body: JSON.stringify({})
+  })
+  assert.equal(missingLogin.status, 400)
+
+  const removed = await fetch(`${origin}${BASE}/accounts/remove`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin },
+    body: JSON.stringify({ login: 'octocat' })
+  })
+  assert.equal(removed.status, 200)
+  assert.equal((await removed.json()).status.activeLogin, 'hubot')
+
+  const gone = await fetch(`${origin}${BASE}/accounts/remove`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin },
+    body: JSON.stringify({ login: 'octocat' })
+  })
+  assert.equal(gone.status, 404)
+})
+
 test('the full browser flow connects an account and lists repositories', async (t) => {
   const env = buildEnv()
   env.store.configure({ clientId: 'id-123456', clientSecret: 'secret-value' })
