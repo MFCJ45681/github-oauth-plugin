@@ -1,6 +1,6 @@
 # @local/github-oauth
 
-> 当前版本 **0.9.1**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+> 当前版本 **0.9.2**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 GitHub，把 `client_secret` 与 access token **AES-256-GCM 加密后落盘**，并同时提供：
 
