@@ -10,10 +10,15 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
 
-function loadBundle () {
+function loadBundle (options = {}) {
   let captured
   const appended = []
-  global.window = { __ModuleLoader__: { load: (definition) => { captured = definition } } }
+  global.window = {
+    __ModuleLoader__: { load: (definition) => { captured = definition } },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true
+  }
   global.document = {
     getElementById: () => null,
     createElement: () => ({ id: '', textContent: '' }),
@@ -29,7 +34,9 @@ function loadBundle () {
       return {
         createElement: (type, props, ...children) => ({ type, props, children }),
         useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
-        useEffect: () => {},
+        useEffect: (fn) => {
+          if (Array.isArray(options.collectEffects)) options.collectEffects.push(fn)
+        },
         useCallback: (fn) => fn,
         useRef: (initial) => ({ current: initial }),
         useMemo: (fn) => fn()
@@ -97,6 +104,51 @@ test('apply registers the tab definition, pane slot and settings section', () =>
   assert.equal(slots[2].definition.id, 'github-accounts')
   assert.equal(slots[2].definition.order, 40)
   assert.equal(typeof slots[2].component, 'function', 'the composer control renders a React component')
+})
+
+test('the composer menu falls back to /status when /accounts is missing', async () => {
+  const effects = []
+  const { factoryExports } = loadBundle({ collectEffects: effects })
+  let composer
+  factoryExports.apply({
+    sidebarRightTabs: { register: () => () => {} },
+    slots: {
+      register: (definition, candidate) => {
+        if (definition.name === 'conversation.input.left') composer = candidate
+        return () => {}
+      },
+      inject: (_key, callback) => callback()
+    },
+    effect: (run) => run()
+  })
+  const calls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url) => {
+    calls.push(String(url))
+    if (String(url).endsWith('/accounts')) {
+      return new Response(JSON.stringify({ error: 'not found', code: 'E_NOT_FOUND' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    if (String(url).endsWith('/status')) {
+      return new Response(JSON.stringify({
+        ok: true,
+        status: { connected: true, account: { login: 'octocat', name: 'The Octocat', avatarUrl: '' }, scopes: ['repo'] }
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    throw new Error('unexpected ' + url)
+  }
+  try {
+    const tree = composer({})
+    assert.equal(tree.props.className, 'gho-cm')
+    effects.forEach((fn) => { fn() })
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    assert.ok(calls.some((url) => url.endsWith('/accounts')), 'tries the 0.9 endpoint first')
+    assert.ok(calls.some((url) => url.endsWith('/status')), 'degrades to /status on 404')
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })
 
 test('the composer account menu renders a trigger and a login entry', () => {
