@@ -271,3 +271,43 @@ test('a cancelled authorization renders an error page and clears the cookie', as
   assert.match(await response.text(), /授权被取消/)
   assert.match(cookieFrom(response), /^gho_oauth_state=$/)
 })
+
+test('bootstrap returns status, preferences and repositories in one cached response', async (t) => {
+  const env = buildEnv()
+  env.store.setPreferences({ defaultRepo: 'octocat/Hello-World' })
+  env.store.setToken({ accessToken: 'gho_test_token', scope: 'repo' }, { login: 'octocat' }, ['repo'])
+  const cache = new Map()
+  const { routes } = createRoutes({ store: env.store, states: env.states, fetchImpl: env.github.fetchImpl, cache })
+  const server = await serve(routes)
+  t.after(() => server.close())
+
+  const first = await fetch(`http://127.0.0.1:${server.port}${BASE}/bootstrap`)
+  assert.equal(first.status, 200)
+  const body = await first.json()
+  assert.equal(body.ok, true)
+  assert.equal(body.status.connected, true)
+  assert.equal(body.status.account.login, 'octocat')
+  assert.equal(body.preferences.defaultRepo, 'octocat/Hello-World')
+  assert.equal(body.repos.length, 1)
+  assert.equal(body.repos[0].fullName, 'octocat/Hello-World')
+  assert.equal(body.repos[0].stars, 42)
+
+  const repoCalls = () => env.github.calls.filter((call) => call.url.includes('/user/repos')).length
+  const before = repoCalls()
+  const second = await fetch(`http://127.0.0.1:${server.port}${BASE}/bootstrap`)
+  assert.equal(second.status, 200)
+  assert.equal(repoCalls(), before, 'the second bootstrap is served from the shared cache')
+})
+
+test('bootstrap reports an empty repository list while disconnected', async (t) => {
+  const env = buildEnv()
+  const { routes } = createRoutes({ store: env.store, states: env.states, fetchImpl: env.github.fetchImpl })
+  const server = await serve(routes)
+  t.after(() => server.close())
+
+  const response = await fetch(`http://127.0.0.1:${server.port}${BASE}/bootstrap`)
+  const body = await response.json()
+  assert.equal(body.status.connected, false)
+  assert.deepEqual(body.repos, [])
+  assert.equal(env.github.calls.some((call) => call.url.includes('/user/repos')), false)
+})

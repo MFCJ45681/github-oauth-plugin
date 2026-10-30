@@ -1,6 +1,6 @@
 {
   "name": "@local/github-oauth",
-  "version": "1.0.0",
+  "version": "0.8.0",
   "description": "GitHub OAuth (web callback) integration for DSH: an encrypted credential vault, github_* agent tools, and a right-sidebar panel.",
   "private": true,
   "type": "commonjs",
@@ -14,7 +14,8 @@
   "files": [
     "lib",
     "scripts",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
@@ -45,5 +46,10 @@
   "homepage": "https://github.com/MFCJ45681/github-oauth-plugin#readme",
   "bugs": {
     "url": "https://github.com/MFCJ45681/github-oauth-plugin/issues"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:file": "node --test",
+    "configure": "node scripts/configure.js"
   }
 }

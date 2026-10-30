@@ -43,6 +43,16 @@ function fakeFetch () {
         { number: 2, title: 'A pull request', state: 'open', user: { login: 'octocat' }, labels: [], html_url: 'https://github.test/pull/2', pull_request: { url: 'x' } }
       ])
     }
+    if (target.endsWith('/readme')) {
+      return jsonResponse({ content: Buffer.from('# Hello-World\n\nreadme body\n', 'utf8').toString('base64'), encoding: 'base64' })
+    }
+    if (target.endsWith('/contents/')) {
+      return jsonResponse([
+        { name: 'README.md', type: 'file', size: 26 },
+        { name: 'src', type: 'dir', size: 0 },
+        { name: 'index.js', type: 'file', size: 120 }
+      ])
+    }
     if (target.includes('/repos/octocat/Hello-World')) return jsonResponse(REPO)
     if (target.includes('/user/repos')) return jsonResponse([])
     return jsonResponse({ message: 'Not Found', documentation_url: 'https://docs.github.test' }, 404)
@@ -120,6 +130,7 @@ test('repository tools report a clear failure before login', async () => {
 
   const badRepo = await tools.github_repo.execute({ repo: 'no-slash' }, {})
   assert.equal(badRepo.ok, false)
+  assert.equal(badRepo.code, 'E_INPUT')
 })
 
 test('repository tools read real payloads once connected', async () => {
@@ -138,6 +149,25 @@ test('repository tools read real payloads once connected', async () => {
   assert.equal(issues.ok, true)
   assert.equal(issues.data.length, 1, 'pull requests are filtered out')
   assert.equal(issues.data[0].title, 'A real issue')
+})
+
+test('repository reads attach repo context unless withContext is false', async () => {
+  const { tools, store } = makeEnv()
+  store.setToken({ accessToken: 'gho_test', scope: 'repo' }, { login: 'octocat' }, ['repo'])
+
+  const withContext = await tools.github_repo.execute({ repo: 'octocat/Hello-World' }, {})
+  assert.equal(withContext.ok, true)
+  assert.match(withContext.text, /仓库上下文 octocat\/Hello-World（默认分支 main）/)
+  assert.match(withContext.text, /顶层（3 项）：src\/ · index\.js · README\.md/)
+  assert.match(withContext.text, /readme body/)
+
+  const bare = await tools.github_repo.execute({ repo: 'octocat/Hello-World', withContext: false }, {})
+  assert.equal(bare.ok, true)
+  assert.equal(bare.text.includes('仓库上下文'), false)
+
+  const disabled = await tools.github_issues.execute({ repo: 'octocat/Hello-World', withContext: false }, {})
+  assert.equal(disabled.ok, true)
+  assert.equal(disabled.text.includes('仓库上下文'), false)
 })
 
 test('the default repository fills a missing repo argument', async () => {

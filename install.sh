@@ -6,6 +6,10 @@
 #
 # The plugin is copied into <profile>/node_modules/@local/github-oauth and its
 # bundle name is appended to dsh.profile.bundles. Restart DSH afterwards.
+#
+# Re-running is cheap: when the plugin files have not changed (content hash
+# recorded in <dest>/.install-hash) the copy is skipped, and the profile
+# package.json is only rewritten when the bundle is not registered yet.
 set -euo pipefail
 
 PKG_NAME='@local/github-oauth'
@@ -25,12 +29,26 @@ if [[ ! -f "$PROFILE/package.json" ]]; then
 fi
 
 DEST="$PROFILE/node_modules/@local/github-oauth"
+FILES=(lib scripts package.json cordis.patch.yml README.md CHANGELOG.md LICENSE)
+
+source_hash() {
+  ( cd "$HERE" && find "${FILES[@]}" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1 )
+}
+
+HASH="$(source_hash)"
 echo "→ installing $PKG_NAME into $PROFILE"
-mkdir -p "$PROFILE/node_modules/@local"
-rm -rf "$DEST"
-mkdir -p "$DEST"
-cp -R "$HERE/lib" "$HERE/scripts" "$DEST/"
-cp "$HERE/package.json" "$HERE/cordis.patch.yml" "$HERE/README.md" "$HERE/LICENSE" "$DEST/"
+
+if [[ -f "$DEST/.install-hash" && "$(cat "$DEST/.install-hash")" == "$HASH" ]]; then
+  echo "  files unchanged ($HASH), skipping copy"
+else
+  mkdir -p "$PROFILE/node_modules/@local"
+  rm -rf "$DEST"
+  mkdir -p "$DEST"
+  cp -R "$HERE/lib" "$HERE/scripts" "$DEST/"
+  cp "$HERE/package.json" "$HERE/cordis.patch.yml" "$HERE/README.md" "$HERE/CHANGELOG.md" "$HERE/LICENSE" "$DEST/"
+  printf '%s\n' "$HASH" > "$DEST/.install-hash"
+  echo "  copied files ($HASH)"
+fi
 
 node - "$PROFILE/package.json" "$PKG_NAME" <<'NODE'
 const fs = require('node:fs')
@@ -39,7 +57,11 @@ const pkg = JSON.parse(fs.readFileSync(file, 'utf8'))
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
 const bundles = Array.isArray(pkg.dsh.profile.bundles) ? pkg.dsh.profile.bundles : []
-if (!bundles.includes(name)) bundles.push(name)
+if (bundles.includes(name)) {
+  console.log(`  dsh.profile.bundles already lists ${name}`)
+  process.exit(0)
+}
+bundles.push(name)
 pkg.dsh.profile.bundles = bundles
 const tmp = `${file}.tmp-${process.pid}`
 fs.writeFileSync(tmp, `${JSON.stringify(pkg, null, 2)}\n`, { mode: 0o600 })

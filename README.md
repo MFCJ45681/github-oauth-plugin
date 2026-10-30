@@ -1,5 +1,7 @@
 # @local/github-oauth
 
+> 当前版本 **0.8.0**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+
 DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 GitHub，把 `client_secret` 与 access token **AES-256-GCM 加密后落盘**，并同时提供：
 
 - 对话内的 `github_*` 原生工具（12 个）
@@ -10,11 +12,11 @@ DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 
 
 ```
 github-oauth-plugin/     ← 仓库根就是插件包，可直接被 dsh plugin add / 插件市场安装
-├── lib/{crypto,vault,default-app,oauth,github-api,auth,state,routes,tools,index,client}.js
+├── lib/{crypto,vault,default-app,oauth,github-api,auth,state,context,routes,tools,index,client}.js
 ├── scripts/configure.js
 ├── package.json
 ├── cordis.patch.yml
-├── test/                ← node:test，26 个用例
+├── test/                ← node:test，37 个用例
 ├── install.sh
 └── uninstall.sh
 ```
@@ -82,7 +84,7 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 | 附加数据 | AAD 绑定 `dsh/github-oauth/vault/v1`，密文片段不能被移植 |
 | 数据文件 | `<DSH_HOME>/github-oauth/vault.json`（整体一个 AEAD 信封，`0600`，tmp + rename + fsync 原子写） |
 | 覆盖范围 | `client_secret`、access token、refresh token、账号信息、仓库偏好全部在信封内；磁盘上没有任何明文 |
-| 读取 | 每次操作重新解密；解密失败抛 `E_VAULT_DECRYPT`，提示主密钥不匹配或文件被篡改 |
+| 读取 | 每次操作解密；进程内用 `mtimeMs:size:ino:ctimeMs` 签名缓存解密结果，文件被外部改写即失效。解密失败抛 `E_VAULT_DECRYPT`，提示主密钥不匹配或文件被篡改 |
 | 对外暴露 | 面板 / 工具 / HTTP 只返回 `clientIdMasked`，**永不回显 secret 与 token** |
 
 主密钥与密文分离存放：只拿到 `vault.json` 无法解密；单独拿到 `master.key` 也不含密文。
@@ -97,7 +99,7 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 | `github_auth_start` | 生成一次性 state，返回授权链接（10 分钟、单次有效） |
 | `github_auth_logout` | 清除 token，保留 OAuth App 凭据 |
 | `github_api_request` | 任意 REST 调用，非 2xx 返回 `ok:false` 而非抛错 |
-| `github_repo` | 仓库元数据 |
+| `github_repo` | 仓库元数据 + 仓库上下文（README 摘要与顶层文件树） |
 | `github_issues` | issue 列表（自动过滤 PR） |
 | `github_pulls` | PR 列表（含 head/base、merged/draft） |
 | `github_search` | repositories / issues / code / users |
@@ -107,6 +109,11 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 
 `github_repo` / `github_issues` / `github_pulls` / `github_file` / `github_create_issue` 的
 `repo` 参数可省略：此时使用设置页里的默认仓库，未设置则返回 `E_NO_REPO` 并提示怎么配置。
+
+**仓库上下文（0.8）**：`github_repo` / `github_issues` / `github_pulls` / `github_file` 默认会在
+结果后追加一段「仓库上下文」——仓库元数据、顶层文件树（目录优先，最多 30 项）和 README 摘要
+（默认 1200 字，缺 README 时降级为空）。这样一次工具调用就能拿到继续干活需要的信息，减少往返。
+按 `owner/name` 缓存 60 秒；传 `withContext: false` 可关闭。
 
 所有工具返回统一信封：
 
@@ -123,13 +130,14 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 
 | 方法与路径 | 用途 |
 | --- | --- |
+| `GET /bootstrap` | 面板一次拿齐 `{ status, preferences, repos }`（未连接时 `repos: []`） |
 | `GET /status` | 状态（不含 secret/token） |
 | `GET /start` | 浏览器登录：302 到 GitHub，并下发 `HttpOnly; SameSite=Lax` 的 state cookie |
 | `POST /start` | 工具登录：返回 `authorizeUrl` |
 | `GET /callback` | 换 code、取账号、加密存 token，渲染中文结果页 |
 | `POST /logout` | 清除 token |
 | `POST /config` | `{ mode: "default" }` 切回内置应用，`{ mode: "custom", clientId, clientSecret }` 保存并启用自定义应用（校验同源） |
-| `GET /repos` | 最近仓库列表 |
+| `GET /repos` | 最近仓库列表（与 `/bootstrap` 共享 30 秒缓存） |
 | `GET /preferences` | 默认仓库与固定仓库 |
 | `POST /preferences` | 改写上述偏好（校验同源与 `owner/name` 格式） |
 
@@ -141,15 +149,28 @@ CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流�
 `repo read:user user:email`。OAuth App 的权限在 GitHub 侧固定，插件只请求这些 scope；
 如需更小权限，改 `lib/oauth.js` 的 `DEFAULT_SCOPE` 后重装。
 
+## 性能（0.8）
+
+| 位置 | 做法 |
+| --- | --- |
+| vault 读取 | 解密结果按文件签名缓存，`status()` 从 6 次同步读 + 6 次解密降到 1 次读 + 1 次解密 |
+| token 刷新 | 单飞（single-flight）：并发工具同时发现过期也只打一次 token 端点，避免 refresh token 被轮换两次 |
+| GitHub GET | 进程内共享缓存（工具 15 秒、`/repos` 30 秒），写操作清空；`github-api` 构造项可调 |
+| 面板加载 | 一个 `/bootstrap` 替代 `/status` + `/preferences` + 首屏 `/repos`，15 秒内复用 |
+| 登录轮询 | 2 秒一次、后台标签页暂停、连接成功立即停止 |
+| 仓库上下文 | 按仓库缓存 60 秒，README 与文件树并行请求 |
+| 安装 | 内容哈希未变时跳过复制与 profile 改写，重复安装近乎瞬时 |
+
 ## 测试
 
 ```bash
-node --test test/crypto-vault.test.js test/http.test.js test/tools.test.js test/client.test.js
-# 26 pass
+npm test          # 等价于 node --test test/*.test.js
+# 37 pass
 ```
 
 覆盖：AES-GCM 往返/篡改/AAD、scrypt 派生、磁盘无明文与 `0600`、主密钥不匹配、state 一次性/过期/上限、
-授权 URL 与回调、坏 state 拒绝、完整登录流、仓库列表、跨站写拒绝、未登录错误信封、PR 过滤、非 2xx 处理；
+授权 URL 与回调、坏 state 拒绝、完整登录流、仓库列表、`/bootstrap` 与缓存、跨站写拒绝、未登录错误信封、
+PR 过滤、非 2xx 处理、单飞刷新、仓库上下文构建与缓存；
 客户端 bundle 的 UMD 契约、apply 注册的 tab / pane 槽 / `settings.section`、未配置态渲染；
 偏好读写（默认仓库、固定仓库、非法格式拒绝、默认仓库回填）。
 
@@ -164,3 +185,5 @@ node --test test/crypto-vault.test.js test/http.test.js test/tools.test.js test/
 | `E_VAULT_DECRYPT` | `master.key` 与 `vault.json` 不配套；删除 `<DSH_HOME>/github-oauth/vault.json` 重新授权 |
 | `redirect_uri` mismatch | OAuth App 的回调地址与面板/工具显示的地址不一致（IP、端口、`publicUrl`） |
 | 面板显示已配置但未连接 | 完成一次浏览器授权即可 |
+| 工具结果里没有「仓库上下文」 | 传了 `withContext: false`，或 README/contents 读取失败（会自动跳过，不影响主结果） |
+| 并发工具偶发 401 | 0.8 起刷新已单飞；若仍出现，检查是否有第二个 DSH 实例在用同一 vault |
