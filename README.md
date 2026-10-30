@@ -1,6 +1,6 @@
 # @local/github-oauth
 
-> 当前版本 **0.9.4**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+> 基于 [MIT 许可证](LICENSE) 开源 · 变更见 [CHANGELOG.md](CHANGELOG.md)
 
 DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 GitHub，把 `client_secret` 与 access token **AES-256-GCM 加密后落盘**，并同时提供：
 
@@ -114,7 +114,7 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 `github_repo` / `github_issues` / `github_pulls` / `github_file` / `github_create_issue` 的
 `repo` 参数可省略：此时使用设置页里的默认仓库，未设置则返回 `E_NO_REPO` 并提示怎么配置。
 
-**仓库上下文（0.8）**：`github_repo` / `github_issues` / `github_pulls` / `github_file` 默认会在
+**仓库上下文**：`github_repo` / `github_issues` / `github_pulls` / `github_file` 默认会在
 结果后追加一段「仓库上下文」——仓库元数据、顶层文件树（目录优先，最多 30 项）和 README 摘要
 （默认 1200 字，缺 README 时降级为空）。这样一次工具调用就能拿到继续干活需要的信息，减少往返。
 按 `owner/name` 缓存 60 秒；传 `withContext: false` 可关闭。
@@ -128,13 +128,13 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 
 失败也返回 `ok:false`（`E_NOT_CONFIGURED` / `E_NOT_CONNECTED` / `E_RATE_LIMIT` / `E_GITHUB` …）并附带中文提示，不会中断多工具回合。
 
-## 多账户（0.9）
+## 多账户
 
 - **入口**：输入框工具行（权限管理右侧）的账户按钮——默认只显示头像、带一层淡投影，点击展开 `@login` 列表；**设置 → GitHub → 输入框按钮** 里有两个滑动开关：「显示用户名」和「按钮阴影」。**设置 → GitHub** 里也有同样的账户列表。
 - **添加**：composer 下拉 →「添加其他账户…」或侧边栏面板的登录按钮，走同一个 OAuth 流程；新账户成为当前账户。
 - **切换**：下拉里选另一个账户，立即生效，不需要重新登录；已保存的 token 不重新授权。
 - **存储**：vault 里按 login 保存 `accounts.<login> = { token（加密）, 账号快照, scopes, connectedAt }`，
-  顶层仍保留活动账户的镜像字段以兼容 0.8 的旧 vault（首次写入自动迁移）。
+  顶层仍保留活动账户的镜像字段以兼容旧版 vault（首次写入自动迁移）。
 - **刷新**：access token 过期时只刷新**当前账户**，且不会切换账户；各账户的 refresh token 互不影响。
 - **移除**：设置页或 `github_account_remove`；移除当前账户后自动切到剩下的一个，全部移除即断开连接。
 
@@ -167,9 +167,9 @@ CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流�
 `repo read:user user:email`。OAuth App 的权限在 GitHub 侧固定，插件只请求这些 scope；
 如需更小权限，改 `lib/oauth.js` 的 `DEFAULT_SCOPE` 后重装。
 
-## 安全与修复（1.0）
+## 安全与加固
 
-1.0 是一次针对「多账户 + 本地加密 + 同源路由」的攻击面复审，修掉的高危问题：
+这一版针对「多账户 + 本地加密 + 同源路由」做了一次攻击面复审，修掉的高危问题：
 
 - **跨账户缓存泄漏**：GET 缓存 key 现在包含 token 指纹（`sha256(token)` 前 16 位），切换账户后
   绝不会读到上一个账户的响应；缓存上限 200 条，写入前清理过期项。
@@ -192,7 +192,7 @@ CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流�
 「添加账户」可取消且失败即停、插件自身 404 不再误报“后端未更新”、轮询与手动刷新不再互相覆盖、
 `/accounts` 结果随事件广播给所有面板、设置页错误/成功状态对读屏可见。
 
-## 性能（0.8 → 1.0）
+## 性能
 
 | 位置 | 做法 |
 | --- | --- |
@@ -233,15 +233,27 @@ PR 过滤、非 2xx 处理、单飞刷新、仓库上下文构建与缓存；
 | `redirect_uri` mismatch | OAuth App 的回调地址与面板/工具显示的地址不一致（IP、端口、`publicUrl`） |
 | 面板显示已配置但未连接 | 完成一次浏览器授权即可 |
 | 工具结果里没有「仓库上下文」 | 传了 `withContext: false`，或 README/contents 读取失败（会自动跳过，不影响主结果） |
-| 并发工具偶发 401 | 0.8 起刷新已单飞；若仍出现，检查是否有第二个 DSH 实例在用同一 vault |
-| 面板只有标题、没有内容 | 1.0 起 200 非 JSON 会明确报错；通常是宿主还没加载本插件路由，重启 DSH 后重试 |
-| 授权弹窗没有出现 | 浏览器拦截弹窗；1.0 起不会再跳走页面，允许本站弹窗后重试，或点「取消等待授权」 |
+| 并发工具偶发 401 | 刷新已单飞；若仍出现，检查是否有第二个 DSH 实例在用同一 vault |
+| 面板只有标题、没有内容 | 200 非 JSON 会明确报错；通常是宿主还没加载本插件路由，重启 DSH 后重试 |
+| 授权弹窗没有出现 | 浏览器拦截弹窗；允许本站弹窗后重试，或点「取消等待授权」 |
 
-## 从 0.9 升级
+## 升级
 
 ```bash
 dsh plugin --profile web add github:MFCJ45681/github-oauth-plugin   # 或 ./install.sh
 # 重启 DSH
 ```
 
-加密库与账户数据向后兼容：0.8/0.9 的 vault 会被自动迁移为多账户结构，无需重新授权。
+加密库与账户数据向后兼容：旧版本的 vault 会被自动迁移为多账户结构，无需重新授权。
+
+## 许可证
+
+本项目基于 **MIT 许可证** 开源，见 [LICENSE](LICENSE)。你可以自由使用、修改、分发，
+包括商业用途；保留版权声明与许可声明即可，软件按「现状」提供，不附带任何担保。
+
+```
+MIT License · Copyright (c) 2026 MFCJ45681
+```
+
+插件只把 OAuth 凭据与 access token 用 AES-256-GCM 加密保存在本机（`<DSH_HOME>/github-oauth/`），
+不会上传到任何第三方服务；GitHub API 调用直接由本机发起。

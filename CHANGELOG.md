@@ -1,26 +1,32 @@
 # Changelog
 
-## 1.0.0
+本项目基于 [MIT 许可证](LICENSE) 开源，可自由使用、修改与分发。
+条目按时间倒序排列；每次发布都在 [Releases](https://github.com/MFCJ45681/github-oauth-plugin/releases) 打 tag，
+下面按**变更主题**分组（越靠前越新），不再使用版本号标注。
 
-安全与性能版本：修掉审计发现的高危问题，客户端交互与可访问性同步收敛。
+---
 
-### 修复
+## 安全与性能加固
 
-- **跨账户缓存泄漏（严重）**：GET 缓存 key 加入 `sha256(token)` 指纹，切换账户后不会复用他人响应；缓存加上限（200 条）并在写入前清理过期项。
-- **CSRF 登出（严重）**：`/logout`、`/config`、`/accounts/*`、`POST /preferences` 只接受 POST，GET 返回 405；顶层导航无法再清空 token 或改配置。
-- **刷新令牌写错账户（严重）**：刷新前捕获 token 所属 login，await 后写回该账户；保留 scopes 与旧 refresh token；`requireAccessToken` 每轮重读活动 token，切换/登出后不会返回他人的令牌。
-- 截断响应返回 `E_TRUNCATED`，空响应体返回 `E_EMPTY`，不再伪装成成功或空列表。
-- `github_file` 拒绝空段、`.`、`..`；`encoding:"none"`（>1 MB）抛 `E_FILE_TOO_LARGE`。
-- `github_api_request` 对 GET/HEAD 带 body 直接返回 `E_INPUT`；新增 HEAD 方法。
+一次针对「多账户 + 本地加密 + 同源路由」的攻击面复审，同时收敛客户端交互与可访问性。
+
+### 修复（安全）
+
+- **跨账户缓存泄漏**：GET 缓存 key 加入 `sha256(token)` 指纹，切换账户后不会复用其他账户的响应；缓存加上限（200 条）。
+- **CSRF 登出**：`/logout`、`/config`、`/accounts/*`、`POST /preferences` 只接受 POST（GET 返回 405），顶层导航无法再清空 token 或改配置。
+- **刷新令牌写错账户**：刷新前捕获 token 所属 login，await 后写回该账户；保留 scopes 与旧 refresh token；每轮重读活动 token，切换/登出后不会拿到他人的令牌。
+- 截断响应返回 `E_TRUNCATED`、空响应体返回 `E_EMPTY`，不再伪装成成功或空列表。
+- `github_file` 拒绝空段、`.`、`..`，不会把 `../../user` 拼到 contents 之外；`encoding:"none"`（>1 MB）抛 `E_FILE_TOO_LARGE`。
+- `github_api_request` 对 GET/HEAD 带 body 返回 `E_INPUT`；新增 HEAD 方法。
 - 畸形 state cookie 不再 500；token 交换失败后 state 仍可重试。
-- 速率限制只在 403/429 且配额耗尽（或 message 含 rate limit）时判定。
+- 速率限制只在 403/429 且配额耗尽（或 message 含 rate limit）时判定，404/422 不再误报。
 - `writeAtomic` 失败清理临时密文文件；`vault.update()` 跨进程加锁；`removeAccount` 对未知 login 抛 `E_NOT_FOUND`。
-- 客户端：未配置时不再整页跳转；授权弹窗在点击内同步打开；「添加账户」可取消、失败即停；404 先看 `code` 再判断；轮询与刷新加序号防覆盖；事件携带 payload 减少重复 `/bootstrap`；`/accounts` 404 回退 `/status`。
+- 客户端：未配置时不再整页跳转；授权弹窗在点击内同步打开；「添加账户」可取消、失败即停；插件自身 404 先看 `code`；轮询与刷新加序号防覆盖；事件携带 payload；侧边栏正文改用 `slots.inject`。
 
 ### 性能
 
 - `/status`、`/accounts` 各一次读 + 一次解密；仓库上下文与 API 缓存均有上限。
-- 授权轮询按可见时间计 5 分钟预算，后台标签页不消耗。
+- 授权轮询按标签页可见时间计 5 分钟预算，后台不消耗。
 - 输入框下拉只在等待授权或菜单打开时随窗口 focus 刷新。
 
 ### 无障碍
@@ -33,135 +39,58 @@
 - 新增 `test/regressions.test.js`（12 个用例）：缓存按 token 隔离、刷新落在 owner 账户、截断/空体、404 与配额、GET body、路径逃逸、大文件、GET 登出 405、畸形 cookie、state 重试、未知账户、随机 token 长度。
 - 全套 **58 个用例通过**。
 
-## 0.9.4
+---
 
-输入框按钮恢复投影，并把两个选项都改成滑动开关。
+## 输入框按钮：仅头像、阴影与滑动开关
 
-### 变更
+- 账户按钮去掉 `/` 恢复投影：默认是白底圆角胶囊，带一层淡投影；只露头像（圆形 28×28，`!important` 限制尺寸，避免 GitHub 原图撑坏布局）。
+- 点击头像才展开账户列表，列表里显示 `@login`、姓名与当前账户标记。
+- **设置 → GitHub → 输入框按钮** 提供两个滑动开关：`显示用户名`（关 = 仅头像）与 `按钮阴影`（默认开）；选择写入 localStorage，刷新后保持，并通过事件让输入框里的按钮即时更新。
+- 开关带 `role="switch"` 与 `aria-checked`，键盘可操作。
+- 未配置 OAuth App 时按钮提示去配置；授权弹窗被拦截时只提示，不再离开当前页面。
 
-- 账户按钮重新带上淡投影（`0 1px 2px` + 1px 描边），白底圆角保持不变，视觉上更像可点控件。
-- **设置 → GitHub → 输入框按钮** 里的两个选项改成**滑动开关**：`显示用户名`（关 = 仅头像，开 = 头像 + 用户名）与 `按钮阴影`（默认开）。
-- 开关立即生效：改动会写入 localStorage 并广播事件，输入框里的按钮无需刷新即可更新外观。
-- 两个开关都带 `role="switch"` 与 `aria-checked`，键盘可操作。
+---
 
-### 测试
+## 多账户支持
 
-- 46 个用例全部通过。
+- **存储**：vault 按 login 保存 `accounts.<login> = { token（加密）, 账号快照, scopes, connectedAt }`，顶层保留活动账户镜像字段以兼容旧 vault（首次写入自动迁移）。
+- **入口**：输入框工具行（权限管理右侧）的账户按钮；**设置 → GitHub** 里有同样的账户列表与「添加/切换/移除」。
+- **添加**：走同一个 OAuth 流程，新账户成为当前账户；可「取消等待授权」。
+- **切换**：立即生效，不重新授权；刷新只刷新当前账户，且不会切换账户。
+- **移除**：移除当前账户后自动提升下一个，全部移除即断开连接，同时清掉镜像字段。
+- 新增 HTTP 路由 `GET /accounts`、`POST /accounts/switch`、`POST /accounts/remove`（均校验同源）。
+- 新增工具 `github_accounts`、`github_account_switch`、`github_account_remove`（工具总数 15）。
+- 旧宿主（无 `/accounts`）自动回退 `GET /status`，只显示当前账户而不是报错。
 
-## 0.9.3
+---
 
-改输入框按钮的显示：去掉阴影，默认只露头像。
+## 设置页：账号与仓库管理
 
-### 变更
+- **设置 → GitHub** 页面（`settings.section`，`id: github-oauth`）：OAuth App 来源、账号、默认仓库与固定仓库。
+- 默认仓库会用于省略 `repo` 参数的工具调用；固定仓库只影响侧边栏展示顺序。
+- 新增 HTTP 路由 `GET/POST /preferences`（`owner/name` 校验，非法返回 `E_INPUT`）。
+- 新增工具 `github_preferences`（读/写默认仓库与固定仓库，空串/空数组表示清除）。
+- 省略 `repo` 时先取默认仓库，仍为空则返回 `E_NO_REPO` 并提示怎么配置。
 
-- 账户按钮去掉 `box-shadow`，保持白底圆角，视觉上更贴合权限管理那排控件。
-- 默认**只显示头像**（圆形 28×28），不再显示用户名和下拉箭头；点击后才展开账户列表，列表里仍显示 `@login`、姓名和当前账户标记。
-- **设置 → GitHub** 新增「输入框按钮」开关，可在「仅头像」与「头像 + 用户名」之间切换；选择存在浏览器 localStorage，刷新后保持。
-- 按钮在两种模式下共用同一套菜单逻辑，切换账户、添加账户的行为不变。
+---
 
-### 测试
+## 内置默认 OAuth App
 
-- 46 个用例全部通过。
+- 插件内置一个 OAuth App（可用 `GITHUB_OAUTH_DEFAULT_CLIENT_ID/SECRET` 覆盖），装好即可登录，不必先去 GitHub 建应用。
+- 仍支持自定义 OAuth App：设置页可填写并启用，也可随时切回内置默认，或切回已保存的自定义应用。
+- 凭据来源写入 vault（`authSource: default | custom`），`status` 返回 `hasCustomApp` 与掩码；`POST /config` 支持 `{ mode: "default" }` 与 `{ mode: "custom", clientId, clientSecret }`。
+- CLI：`node scripts/configure.js use-default`、`set --reuse-custom`、`set --client-id … --client-secret-stdin`。
+- 安全边界：随插件分发的 client secret 等同公开信息，权限仍来自用户授权；不想用时在设置页切到自定义应用。
+- 面板与设置页会显示「内置默认（推荐）/ 自定义」来源与切换按钮；旧 vault 自动判定来源。
 
-## 0.9.2
+---
 
-修界面：输入框的账户头像被宿主样式撑成原图大小（460px），整行布局跟着崩。
+## 首次发布：OAuth 连接与加密存储
 
-### 修复
-
-- 头像尺寸改为**内联样式 + `!important` 双重约束**（16×16 / 36×36，含 min/max 与 `flex:0 0 Npx`），
-  不再依赖 class 规则在宿主样式表中的优先级。之前只要宿主的 `img` 规则优先级更高，头像就会按原图渲染。
-- `.gho-cm` 增加 `max-height:28px; line-height:1`，`.gho-cm-avatar` 加 `display:block`，避免行高把控制条撑开。
-- 所有头像 `<img>` 同时带 `width`/`height` 属性，样式加载前的首帧也不会闪成巨图。
-
-### 测试
-
-- 46 个用例保持不变，全部通过。
-
-## 0.9.1
-
-小修：输入框账户下拉在没有重启宿主的旧后端上不再报错，按钮改为白底圆角。
-
-### 修复
-
-- **下拉爆「HTTP 404」**：`/accounts` 是 0.9.0 新增路由，宿主没重启时必然 404。现在下拉先请求
-  `/accounts`，404 时自动降级到 `/status`，只显示当前账户（不弹错误）；切换/添加等操作遇到 404
-  会提示「插件后端还没更新（HTTP 404）。重启 DSH 后多账户功能即可用。」
-- `request()` 现在把 HTTP 状态码与 `code` 挂到抛出的错误上，便于分支处理。
-
-### 样式
-
-- 输入框账户按钮改为**白底 + 圆角胶囊**（`#fff` 背景、1px 描边、轻阴影，hover 变浅灰）。
-
-### 测试
-
-- 46 个用例（+1）：`/accounts` 404 时回退 `/status` 并只降级显示当前账户。
-
-## 0.9.0
-
-多账户：同一份 DSH 里可以保存多个 GitHub 账号，并在输入框旁边直接切换。
-
-### 新增
-
-- **输入框账户下拉**：注册在 `conversation.input.left`，紧挨权限管理；显示当前账号头像与 `@login`，
-  展开后可切换账户或「添加其他账户…」。新账户授权完成后自动成为当前账户。
-- **设置 → GitHub → 已保存的 GitHub 账户**：列出全部账户（当前 / 切换 / 移除），与下拉共用状态。
-- 3 个工具（合计 15）：`github_accounts`、`github_account_switch`、`github_account_remove`；
-  `github_auth_logout` 现在表示「注销全部账户」。
-- 3 条同源路由：`GET /accounts`、`POST /accounts/switch`、`POST /accounts/remove`。
-- vault 账户模型：`accounts[login] = { token（加密）, 账号快照, scopes, connectedAt }` + `activeLogin`；
-  旧版单 token vault 读取时自动迁移，写回后保留活动账户的顶层镜像字段。
-
-### 修复
-
-- **删除最后一个账户后仍然显示已连接**：`removeAccount` 清空 `accounts` 后，`mirrorActive` 又从顶层
-  镜像字段重建了单账户。现在清空账户时一并删掉 `token/account/scopes/connectedAt`。
-- **刷新可能串号**：token 刷新改为只写当前账户（`{ activate: false }`），不再依赖顶层字段，也就不会
-  把 refresh 结果写到别的账户上。
-- 并发工具共享同一次刷新时，各自拿到的仍是**当前账户**的 access token。
-
-### 测试
-
-- 45 个用例（+6）：多账户存取/切换/移除/最后账户删除、旧 vault 迁移、刷新只影响当前账户、
-  `/accounts` 系列路由（含跨站 403 与 404）、composer 下拉渲染。
-
-## 0.8.0
-
-一次以「更快、更少往返」为目标的版本。没有破坏性变更：已有 vault、偏好和登录态直接沿用。
-
-### 修复
-
-- **侧边栏登录会把整个 DSH 页面导航走**：`window.open(url, '_blank', 'noopener,noreferrer')`
-  在带 `noopener` 时恒返回 `null`，旧代码据此走 `location.assign()` 分支，导致离开 DSH 界面。
-  现在先开空白标签页再清 `opener`，仅在被浏览器拦截时才回退到当前页导航。
-- **并发刷新会作废 refresh token**：`requireAccessToken` 现在单飞，多个并发工具只触发一次
-  刷新；GitHub 侧 refresh token 不再被轮换两次。
-- **`github_file` 读大文件抛 `TypeError`**：contents API 响应超限时 `json` 为 `null`，
-  旧代码继续访问 `json.type`。现在按 `maxChars` 推导 `maxBytes`，超限时明确返回
-  `E_FILE_TOO_LARGE`。
-- **非法仓库名被归为内部错误**：`requireRepo` 现在带 `code: 'E_INPUT'`，返回可读提示而不是 `E_INTERNAL`。
-- **OAuth state 泄漏**：`/start` 在构建授权 URL 失败、`/callback` 收到 `?error=` 时都会消费掉 pending state。
-
-### 性能
-
-- vault 读取按文件签名（`mtimeMs:size:ino:ctimeMs`）缓存解密结果；`status()` 从
-  6 次同步读 + 6 次 AES-GCM 解密降到 1 次读 + 1 次解密。
-- 目录检查（`mkdir` + `chmod`）每个实例只做一次，读路径上少两个系统调用；
-  缓存按 inode 变化识别外部写入，目录被删后下次写入自动重建。
-- GitHub API 进程内共享 GET 缓存：工具默认 15 秒、`/repos` 30 秒，写操作清空缓存。
-- 面板新增 `GET /bootstrap`，一次返回 `{ status, preferences, repos }`，替代原来的
-  `/status` + `/preferences` + `/repos` 三个请求；客户端 15 秒内复用。
-- 登录轮询改为 2 秒一次，页面在后台时暂停，连接成功后立刻停止；已有关联数据时不再重复拉仓库。
-- 仓库上下文按 `owner/name` 缓存 60 秒，README 与文件树并行请求。
-- `install.sh` 内容哈希未变时跳过复制和 profile 改写；`npm test` 一条命令跑全部用例。
-
-### 新增：仓库上下文
-
-`github_repo` / `github_issues` / `github_pulls` / `github_file` 默认在结果后追加「仓库上下文」：
-仓库元数据、顶层文件树（目录优先、最多 30 项）、README 摘要（默认 1200 字）。
-传 `withContext: false` 可关闭。实现见 `lib/context.js`。
-
-### 测试
-
-39 个 `node:test` 用例（新增 `test/auth.test.js` 与 `test/context.test.js`），覆盖单飞刷新、
-上下文构建与缓存、`/bootstrap`、`withContext` 开关、跨实例缓存失效与目录重建等。
+- GitHub OAuth **authorization code + 网页回调**（`/plugins/github-oauth/callback`）；state 一次性、10 分钟 TTL，浏览器流程额外用 `HttpOnly; SameSite=Lax` cookie 绑定。
+- **AES-256-GCM** 加密 `client_secret` 与 access token，主密钥 `0600` 存于 `<DSH_HOME>/github-oauth/`，密文与密钥分离；`status` 永不回显 secret/token。
+- 工具：`github_auth_status`、`github_auth_setup`、`github_auth_start`、`github_auth_logout`、`github_api_request`、`github_repo`、`github_issues`、`github_pulls`、`github_search`、`github_file`、`github_create_issue`。
+- 右侧栏 **GitHub** 面板 + 同源路由（`/status`、`/start`、`/callback`、`/logout`、`/config`、`/repos`）。
+- 仓库上下文（README 摘要 + 顶层文件树）随 `github_repo` / `github_issues` / `github_pulls` / `github_file` 一起返回，`withContext: false` 可关闭。
+- 单飞刷新、vault 读缓存、GET 缓存、`/bootstrap` 一次拿齐面板数据。
+- 测试从加密/路由/工具/客户端四个层面覆盖；仓库根即插件包，可直接 `dsh plugin add github:...` 或从插件市场安装。
