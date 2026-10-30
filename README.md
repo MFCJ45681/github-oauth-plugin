@@ -1,11 +1,11 @@
 # @local/github-oauth
 
-> 当前版本 **0.9.2**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+> 当前版本 **0.9.3**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 GitHub，把 `client_secret` 与 access token **AES-256-GCM 加密后落盘**，并同时提供：
 
 - 对话内的 `github_*` 原生工具（15 个）
-- 输入框下方的**账户下拉**（紧挨权限管理）：一键切换已连接的多份 GitHub 账户
+- 输入框下方的**账户按钮**（紧挨权限管理）：默认只显示头像，点击展开账户列表，一键切换多份 GitHub 账户
 - **内置默认 OAuth App**：装好就能登录，不必先去 GitHub 建应用；也可随时换成自己的应用
 - 右侧栏 **GitHub** 面板（登录状态 / 仓库速览）
 - **设置 → GitHub** 页面：更换 OAuth App、切换/移除账户、管理默认仓库与固定仓库
@@ -130,7 +130,7 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 
 ## 多账户（0.9）
 
-- **入口**：输入框工具行（权限管理右侧）的 `@login ▾` 下拉；**设置 → GitHub** 里也有同样的账户列表。
+- **入口**：输入框工具行（权限管理右侧）的账户按钮——默认只显示头像（无边框阴影），点击展开 `@login` 列表；显示形式可在 **设置 → GitHub → 输入框按钮** 里切换「仅头像 / 头像 + 用户名」。**设置 → GitHub** 里也有同样的账户列表。
 - **添加**：composer 下拉 →「添加其他账户…」或侧边栏面板的登录按钮，走同一个 OAuth 流程；新账户成为当前账户。
 - **切换**：下拉里选另一个账户，立即生效，不需要重新登录；已保存的 token 不重新授权。
 - **存储**：vault 里按 login 保存 `accounts.<login> = { token（加密）, 账号快照, scopes, connectedAt }`，
