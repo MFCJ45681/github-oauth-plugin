@@ -1,0 +1,157 @@
+# @local/github-oauth
+
+DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 GitHub，把 `client_secret` 与 access token **AES-256-GCM 加密后落盘**，并同时提供：
+
+- 对话内的 `github_*` 原生工具（12 个）
+- **内置默认 OAuth App**：装好就能登录，不必先去 GitHub 建应用；也可随时换成自己的应用
+- 右侧栏 **GitHub** 面板（登录状态 / 仓库速览）
+- **设置 → GitHub** 页面：更换 OAuth App、切换账号、管理默认仓库与固定仓库
+- 同源 HTTP 路由 `/plugins/github-oauth/*`（面板和工具共用）
+
+```
+github-oauth-plugin/
+├── plugin/               ← 实际安装到 <profile>/node_modules/@local/github-oauth
+│   ├── lib/{crypto,vault,default-app,oauth,github-api,auth,state,routes,tools,index,client}.js
+│   ├── scripts/configure.js
+│   ├── package.json
+│   └── cordis.patch.yml
+├── test/                 ← node:test，26 个用例
+├── install.sh
+└── uninstall.sh
+```
+
+## 安装
+
+```bash
+DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
+# 然后重启 DSH（正在运行的进程不会重新加载 bundle）
+```
+
+`install.sh` 会把 `plugin/` 复制到 `<profile>/node_modules/@local/github-oauth`，并把
+`@local/github-oauth` 追加到 profile `package.json` 的 `dsh.profile.bundles`（原子写入）。
+卸载：`./uninstall.sh [--purge]`（`--purge` 同时删除加密凭据库）。
+
+## 第一次使用
+
+**默认路径（推荐）**：右侧栏 `+` → **GitHub** → “使用 GitHub 登录”，在 GitHub 页面点一次授权即可。
+插件自带一个内置 OAuth App（`lib/default-app.js`），所以不需要先去 GitHub 建应用。
+如果浏览器是通过局域网 IP 访问 DSH，用 `github_auth_start({ publicUrl: "http://<ip>:3080" })`
+或面板里的提示确认回调地址。
+
+**换成自己的 OAuth App**（可选）：
+
+1. 打开 https://github.com/settings/developers → **New OAuth App**
+   - Homepage URL：`http://127.0.0.1:3080`（或你的 DSH 地址）
+   - **Authorization callback URL**：`http://127.0.0.1:3080/plugins/github-oauth/callback`
+2. 在 **设置 → GitHub → OAuth App → 使用自定义 OAuth App** 填 Client ID / Client Secret，
+   保存后立即生效；也可以让 agent 调用 `github_auth_setup({ clientId, clientSecret })`，或用 CLI：
+
+   ```bash
+   node plugin/scripts/configure.js set --client-id Iv1.xxxxxxxx --client-secret-stdin
+   ```
+
+   想切回内置应用：`github_auth_setup({ useDefault: true })`，或
+   `node plugin/scripts/configure.js use-default`。自定义凭据会继续躺在加密 vault 里，
+   之后一句 `github_auth_setup()`（不传参）或设置页按钮就能切回去。
+
+日常管理在 **设置 → GitHub**：切换 OAuth App、更换账号、设置默认仓库（工具省略 `repo`
+参数时使用）和固定仓库。这些偏好与凭据一样写在加密 vault 里。
+
+> 内置应用的安全边界：随插件分发的 client secret 相当于公开信息，它本身不能代表你操作
+> GitHub——真正的权限来自你在授权页点下的那一次同意，换来的 token 只存在本机加密 vault 里。
+> 如果这个 secret 被滥用，可在 GitHub 上轮换它，并用
+> `GITHUB_OAUTH_DEFAULT_CLIENT_ID` / `GITHUB_OAUTH_DEFAULT_CLIENT_SECRET` 覆盖，
+> 或直接改用你自己的应用。
+
+## 加密设计
+
+| 项目 | 做法 |
+| --- | --- |
+| 算法 | AES-256-GCM（`node:crypto`），每条记录随机 12 字节 IV |
+| 密文格式 | `gho1.<base64 iv>.<base64 tag>.<base64 ciphertext>` |
+| 主密钥 | `<DSH_HOME>/github-oauth/master.key`（32 字节，`0600`），或 `GITHUB_OAUTH_MASTER_KEY`（经 scrypt 派生） |
+| 附加数据 | AAD 绑定 `dsh/github-oauth/vault/v1`，密文片段不能被移植 |
+| 数据文件 | `<DSH_HOME>/github-oauth/vault.json`（整体一个 AEAD 信封，`0600`，tmp + rename + fsync 原子写） |
+| 覆盖范围 | `client_secret`、access token、refresh token、账号信息、仓库偏好全部在信封内；磁盘上没有任何明文 |
+| 读取 | 每次操作重新解密；解密失败抛 `E_VAULT_DECRYPT`，提示主密钥不匹配或文件被篡改 |
+| 对外暴露 | 面板 / 工具 / HTTP 只返回 `clientIdMasked`，**永不回显 secret 与 token** |
+
+主密钥与密文分离存放：只拿到 `vault.json` 无法解密；单独拿到 `master.key` 也不含密文。
+`GITHUB_OAUTH_DATA_DIR` 可覆盖数据目录。
+
+## 工具
+
+| 工具 | 说明 |
+| --- | --- |
+| `github_auth_status` | 配置/连接状态、scopes、凭据库位置 |
+| `github_auth_setup` | 选择 OAuth App：`{ useDefault: true }` 用内置默认应用，或传 `clientId` + `clientSecret` 保存自定义应用（secret 可回退 `GITHUB_OAUTH_CLIENT_SECRET`） |
+| `github_auth_start` | 生成一次性 state，返回授权链接（10 分钟、单次有效） |
+| `github_auth_logout` | 清除 token，保留 OAuth App 凭据 |
+| `github_api_request` | 任意 REST 调用，非 2xx 返回 `ok:false` 而非抛错 |
+| `github_repo` | 仓库元数据 |
+| `github_issues` | issue 列表（自动过滤 PR） |
+| `github_pulls` | PR 列表（含 head/base、merged/draft） |
+| `github_search` | repositories / issues / code / users |
+| `github_file` | 读文件（base64 解码、二进制识别、截断）或列目录 |
+| `github_create_issue` | 新建 issue |
+| `github_preferences` | 读/写默认仓库与固定仓库（省略参数即读取） |
+
+`github_repo` / `github_issues` / `github_pulls` / `github_file` / `github_create_issue` 的
+`repo` 参数可省略：此时使用设置页里的默认仓库，未设置则返回 `E_NO_REPO` 并提示怎么配置。
+
+所有工具返回统一信封：
+
+```json
+{ "ok": true, "code": "OK", "text": "…", "data": {}, "status": 200,
+  "rateLimitRemaining": 4999, "rateLimitReset": 1800000000, "nextUrl": "" }
+```
+
+失败也返回 `ok:false`（`E_NOT_CONFIGURED` / `E_NOT_CONNECTED` / `E_RATE_LIMIT` / `E_GITHUB` …）并附带中文提示，不会中断多工具回合。
+
+## HTTP 路由
+
+均在同源 `/plugins/github-oauth` 下（仅本机服务，无额外认证层）：
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| `GET /status` | 状态（不含 secret/token） |
+| `GET /start` | 浏览器登录：302 到 GitHub，并下发 `HttpOnly; SameSite=Lax` 的 state cookie |
+| `POST /start` | 工具登录：返回 `authorizeUrl` |
+| `GET /callback` | 换 code、取账号、加密存 token，渲染中文结果页 |
+| `POST /logout` | 清除 token |
+| `POST /config` | `{ mode: "default" }` 切回内置应用，`{ mode: "custom", clientId, clientSecret }` 保存并启用自定义应用（校验同源） |
+| `GET /repos` | 最近仓库列表 |
+| `GET /preferences` | 默认仓库与固定仓库 |
+| `POST /preferences` | 改写上述偏好（校验同源与 `owner/name` 格式） |
+
+CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流程的 state 为 256 位不可猜值且一次性消费。
+所有 POST 校验 `Origin`（无 Origin 放行，跨站 403）。
+
+## 默认权限（scopes）
+
+`repo read:user user:email`。OAuth App 的权限在 GitHub 侧固定，插件只请求这些 scope；
+如需更小权限，改 `plugin/lib/oauth.js` 的 `DEFAULT_SCOPE` 后重装。
+
+## 测试
+
+```bash
+node --test test/crypto-vault.test.js test/http.test.js test/tools.test.js test/client.test.js
+# 26 pass
+```
+
+覆盖：AES-GCM 往返/篡改/AAD、scrypt 派生、磁盘无明文与 `0600`、主密钥不匹配、state 一次性/过期/上限、
+授权 URL 与回调、坏 state 拒绝、完整登录流、仓库列表、跨站写拒绝、未登录错误信封、PR 过滤、非 2xx 处理；
+客户端 bundle 的 UMD 契约、apply 注册的 tab / pane 槽 / `settings.section`、未配置态渲染；
+偏好读写（默认仓库、固定仓库、非法格式拒绝、默认仓库回填）。
+
+## 故障排查
+
+| 现象 | 处理 |
+| --- | --- |
+| 侧边栏 / 设置里没有 GitHub 入口 | 确认已重启 DSH；`grep github-oauth <profile>/package.json` |
+| 不想用内置默认应用 | 设置页切到自定义，或 `github_auth_setup({ clientId, clientSecret })`；也可用 `GITHUB_OAUTH_DEFAULT_*` 覆盖内置值 |
+| 回调 400 “state 校验失败” | 授权链接过期（10 分钟）或重复使用；重新登录 |
+| 回调 400 “授权被取消” | 在 GitHub 页面点了取消，属正常 |
+| `E_VAULT_DECRYPT` | `master.key` 与 `vault.json` 不配套；删除 `<DSH_HOME>/github-oauth/vault.json` 重新授权 |
+| `redirect_uri` mismatch | OAuth App 的回调地址与面板/工具显示的地址不一致（IP、端口、`publicUrl`） |
+| 面板显示已配置但未连接 | 完成一次浏览器授权即可 |

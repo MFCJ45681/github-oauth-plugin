@@ -1,0 +1,33 @@
+{
+  "name": "@local/github-oauth",
+  "version": "1.0.0",
+  "description": "GitHub OAuth (web callback) integration for DSH: an encrypted credential vault, github_* agent tools, and a right-sidebar panel.",
+  "private": true,
+  "type": "commonjs",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}
