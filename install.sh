@@ -29,7 +29,8 @@ echo "→ installing $PKG_NAME into $PROFILE"
 mkdir -p "$PROFILE/node_modules/@local"
 rm -rf "$DEST"
 mkdir -p "$DEST"
-cp -R "$HERE/plugin/." "$DEST/"
+cp -R "$HERE/lib" "$HERE/scripts" "$DEST/"
+cp "$HERE/package.json" "$HERE/cordis.patch.yml" "$HERE/README.md" "$HERE/LICENSE" "$DEST/"
 
 node - "$PROFILE/package.json" "$PKG_NAME" <<'NODE'
 const fs = require('node:fs')
@@ -52,5 +53,5 @@ echo "  1. restart DSH (the running process will not pick the plugin up otherwis
 echo "  2. open the GitHub panel in the right sidebar and click \"使用 GitHub 登录\""
 echo "     the built-in OAuth App works out of the box; no GitHub app to create"
 echo "  3. optional: use your own app in Settings → GitHub, or"
-echo "     node $HERE/plugin/scripts/configure.js set --client-id <id> --client-secret-stdin"
-echo "     (callback URL: http://127.0.0.1:3080/plugins/github-oauth/callback)
+echo "     node $HERE/scripts/configure.js set --client-id <id> --client-secret-stdin"
+echo "     (callback URL: http://127.0.0.1:3080/plugins/github-oauth/callback)"

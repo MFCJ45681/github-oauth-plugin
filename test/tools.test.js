@@ -6,10 +6,10 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { VaultStore } = require('../plugin/lib/vault')
-const { PendingStates } = require('../plugin/lib/state')
-const { buildTools } = require('../plugin/lib/tools')
-const { DEFAULT_CLIENT_ID } = require('../plugin/lib/default-app')
+const { VaultStore } = require('../lib/vault')
+const { PendingStates } = require('../lib/state')
+const { buildTools } = require('../lib/tools')
+const { DEFAULT_CLIENT_ID } = require('../lib/default-app')
 
 const REPO = {
   full_name: 'octocat/Hello-World',

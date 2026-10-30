@@ -7,10 +7,10 @@ const http = require('node:http')
 const os = require('node:os')
 const path = require('node:path')
 
-const { VaultStore } = require('../plugin/lib/vault')
-const { PendingStates } = require('../plugin/lib/state')
-const { createRoutes, BASE, CALLBACK_PATH } = require('../plugin/lib/routes')
-const { DEFAULT_CLIENT_ID } = require('../plugin/lib/default-app')
+const { VaultStore } = require('../lib/vault')
+const { PendingStates } = require('../lib/state')
+const { createRoutes, BASE, CALLBACK_PATH } = require('../lib/routes')
+const { DEFAULT_CLIENT_ID } = require('../lib/default-app')
 
 function jsonResponse (body, headers = {}, status = 200) {
   return new Response(JSON.stringify(body), {

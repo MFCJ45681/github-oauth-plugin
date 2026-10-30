@@ -29,5 +29,21 @@
         "@deepseek-ai/dsh-client-ui-sidebar-right"
       ]
     }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "github",
+    "oauth",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MFCJ45681/github-oauth-plugin.git"
+  },
+  "homepage": "https://github.com/MFCJ45681/github-oauth-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/MFCJ45681/github-oauth-plugin/issues"
   }
 }

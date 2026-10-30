@@ -6,10 +6,10 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { encryptJson, decryptJson, deriveKey, randomKey } = require('../plugin/lib/crypto')
-const { VaultStore, resolveDataDir } = require('../plugin/lib/vault')
-const { DEFAULT_CLIENT_ID } = require('../plugin/lib/default-app')
-const { PendingStates } = require('../plugin/lib/state')
+const { encryptJson, decryptJson, deriveKey, randomKey } = require('../lib/crypto')
+const { VaultStore, resolveDataDir } = require('../lib/vault')
+const { DEFAULT_CLIENT_ID } = require('../lib/default-app')
+const { PendingStates } = require('../lib/state')
 
 function tempDir () {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'gho-test-'))

@@ -19,7 +19,7 @@ function loadBundle () {
     createElement: () => ({ id: '', textContent: '' }),
     head: { appendChild: (node) => appended.push(node) }
   }
-  const clientPath = path.join(__dirname, '..', 'plugin', 'lib', 'client.js')
+  const clientPath = path.join(__dirname, '..', 'lib', 'client.js')
   delete require.cache[clientPath]
   require(clientPath)
   assert.ok(captured, 'bundle must call window.__ModuleLoader__.load')

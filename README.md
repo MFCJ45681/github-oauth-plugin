@@ -9,27 +9,36 @@ DSH 插件：用 **GitHub OAuth（authorization code + 网页回调）** 连接 
 - 同源 HTTP 路由 `/plugins/github-oauth/*`（面板和工具共用）
 
 ```
-github-oauth-plugin/
-├── plugin/               ← 实际安装到 <profile>/node_modules/@local/github-oauth
-│   ├── lib/{crypto,vault,default-app,oauth,github-api,auth,state,routes,tools,index,client}.js
-│   ├── scripts/configure.js
-│   ├── package.json
-│   └── cordis.patch.yml
-├── test/                 ← node:test，26 个用例
+github-oauth-plugin/     ← 仓库根就是插件包，可直接被 dsh plugin add / 插件市场安装
+├── lib/{crypto,vault,default-app,oauth,github-api,auth,state,routes,tools,index,client}.js
+├── scripts/configure.js
+├── package.json
+├── cordis.patch.yml
+├── test/                ← node:test，26 个用例
 ├── install.sh
 └── uninstall.sh
 ```
 
 ## 安装
 
+用 DSH 官方插件命令（推荐，等同插件市场的安装方式）：
+
 ```bash
-DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
+dsh plugin --profile web add github:MFCJ45681/github-oauth-plugin
 # 然后重启 DSH（正在运行的进程不会重新加载 bundle）
 ```
 
-`install.sh` 会把 `plugin/` 复制到 `<profile>/node_modules/@local/github-oauth`，并把
-`@local/github-oauth` 追加到 profile `package.json` 的 `dsh.profile.bundles`（原子写入）。
-卸载：`./uninstall.sh [--purge]`（`--purge` 同时删除加密凭据库）。
+或从源码检出安装：
+
+```bash
+DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
+```
+
+`dsh plugin add` 走 pnpm 安装到 `<profile>/node_modules/@local/github-oauth` 并写入
+`dsh.profile.bundles`；`install.sh` 是离线等价操作（复制 `lib/`、`scripts/`、
+`package.json`、`cordis.patch.yml`，再原子改写 profile `package.json`）。
+卸载：`./uninstall.sh [--purge]`（`--purge` 同时删除加密凭据库），或
+`dsh plugin --profile web remove @local/github-oauth`。
 
 ## 第一次使用
 
@@ -47,11 +56,11 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
    保存后立即生效；也可以让 agent 调用 `github_auth_setup({ clientId, clientSecret })`，或用 CLI：
 
    ```bash
-   node plugin/scripts/configure.js set --client-id Iv1.xxxxxxxx --client-secret-stdin
+   node scripts/configure.js set --client-id Iv1.xxxxxxxx --client-secret-stdin
    ```
 
    想切回内置应用：`github_auth_setup({ useDefault: true })`，或
-   `node plugin/scripts/configure.js use-default`。自定义凭据会继续躺在加密 vault 里，
+   `node scripts/configure.js use-default`。自定义凭据会继续躺在加密 vault 里，
    之后一句 `github_auth_setup()`（不传参）或设置页按钮就能切回去。
 
 日常管理在 **设置 → GitHub**：切换 OAuth App、更换账号、设置默认仓库（工具省略 `repo`
@@ -130,7 +139,7 @@ CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流�
 ## 默认权限（scopes）
 
 `repo read:user user:email`。OAuth App 的权限在 GitHub 侧固定，插件只请求这些 scope；
-如需更小权限，改 `plugin/lib/oauth.js` 的 `DEFAULT_SCOPE` 后重装。
+如需更小权限，改 `lib/oauth.js` 的 `DEFAULT_SCOPE` 后重装。
 
 ## 测试
 
