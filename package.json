@@ -1,6 +1,6 @@
 {
   "name": "@local/github-oauth",
-  "version": "0.9.4",
+  "version": "1.0.0",
   "description": "GitHub OAuth (web callback) integration for DSH: an encrypted credential vault, github_* agent tools, and a right-sidebar panel.",
   "private": true,
   "type": "commonjs",
@@ -50,6 +50,7 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "test:file": "node --test",
-    "configure": "node scripts/configure.js"
+    "configure": "node scripts/configure.js",
+    "bench": "node scripts/bench.js"
   }
 }

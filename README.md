@@ -17,7 +17,7 @@ github-oauth-plugin/     ← 仓库根就是插件包，可直接被 dsh plugin 
 ├── scripts/configure.js
 ├── package.json
 ├── cordis.patch.yml
-├── test/                ← node:test，45 个用例
+├── test/                ← node:test，58 个用例
 ├── install.sh
 └── uninstall.sh
 ```
@@ -158,15 +158,41 @@ DSH_PROFILE_DIR=/root/projects/.dsh/profiles/web ./install.sh
 | `GET /preferences` | 默认仓库与固定仓库 |
 | `POST /preferences` | 改写上述偏好（校验同源与 `owner/name` 格式） |
 
-CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流程的 state 为 256 位不可猜值且一次性消费。
-所有 POST 校验 `Origin`（无 Origin 放行，跨站 403）。
+CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流程的 state 为 256 位不可猜值且一次性消费
+（换取 token 成功后才作废，失败可重试）。所有写路由**只接受 POST**（否则 405），并校验 `Origin`
+（无 Origin 放行，跨站 403）——顶层导航的 GET 无法触发登出或改配置。
 
 ## 默认权限（scopes）
 
 `repo read:user user:email`。OAuth App 的权限在 GitHub 侧固定，插件只请求这些 scope；
 如需更小权限，改 `lib/oauth.js` 的 `DEFAULT_SCOPE` 后重装。
 
-## 性能（0.8）
+## 安全与修复（1.0）
+
+1.0 是一次针对「多账户 + 本地加密 + 同源路由」的攻击面复审，修掉的高危问题：
+
+- **跨账户缓存泄漏**：GET 缓存 key 现在包含 token 指纹（`sha256(token)` 前 16 位），切换账户后
+  绝不会读到上一个账户的响应；缓存上限 200 条，写入前清理过期项。
+- **CSRF 登出**：`/logout`、`/config`、`/accounts/*`、`POST /preferences` 只接受 POST（否则 405），
+  顶层导航式的 GET 无法再清空 token。
+- **刷新写到错误账户**：刷新前先记住 token 所属 login，await 之后写回该账户；同时保留原有 scopes、
+  保留旧 refresh token，并在每轮循环里重读活动 token，避免切账户/登出后拿到别人的令牌。
+- **截断即失败**：响应体超限（`truncated`）不再伪装成空结果，返回 `E_TRUNCATED`；空响应体返回 `E_EMPTY`。
+- **路径逃逸**：`github_file` 拒绝空段、`.` 与 `..`，不会把 `../../user` 拼到 `/repos/.../contents` 之外。
+- **GET/HEAD 带 body**：`github_api_request` 直接返回 `E_INPUT`，不再变成误导性的 `E_NETWORK`。
+- **畸形 cookie**：`%zz` 之类的值不再让回调 500，而是正常渲染 400 结果页。
+- **state 不再提前消费**：token 交换失败可以重试，成功后才作废。
+- **加密库健壮性**：写失败会删除含密文的临时文件；`update()` 跨进程加锁（`vault.json.lock`，
+  2 秒超时接管）；加密库缓存按文件签名失效，目录被删后自动重建。
+- **大文件**：contents API 返回 `encoding:"none"`（>1 MB）时抛 `E_FILE_TOO_LARGE`，不再显示为“空文件”。
+- **速率限制判定**：只有 403/429 且配额耗尽（或 message 含 rate limit）才算 `E_RATE_LIMIT`，
+  404/422 不再被误报。
+
+客户端也同步修复：未配置时不再跳走整个 DSH 页面、授权弹窗改为点击时同步打开（不再被拦截）、
+「添加账户」可取消且失败即停、插件自身 404 不再误报“后端未更新”、轮询与手动刷新不再互相覆盖、
+`/accounts` 结果随事件广播给所有面板、设置页错误/成功状态对读屏可见。
+
+## 性能（0.8 → 1.0）
 
 | 位置 | 做法 |
 | --- | --- |
@@ -178,12 +204,15 @@ CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流�
 | 仓库上下文 | 按仓库缓存 60 秒，README 与文件树并行请求 |
 | 安装 | 内容哈希未变时跳过复制与 profile 改写，重复安装近乎瞬时 |
 | 目录检查 | `mkdir` + `chmod` 每个 VaultStore 只做一次；目录被删后写入会自动重建 |
+| 状态读取 | `/status`、`/accounts` 都是一次读 + 一次解密，不再重复列账户 |
+| 缓存上限 | API 缓存 200 条、仓库上下文 100 条，长会话不会无限增长 |
+| 加密库写入 | 跨进程文件锁，读改写原子化（CLI 与运行中的插件同时写不再丢数据） |
 
 ## 测试
 
 ```bash
 npm test          # 等价于 node --test test/*.test.js
-# 45 pass
+# 58 pass
 ```
 
 覆盖：AES-GCM 往返/篡改/AAD、scrypt 派生、磁盘无明文与 `0600`、主密钥不匹配、state 一次性/过期/上限、
@@ -205,3 +234,14 @@ PR 过滤、非 2xx 处理、单飞刷新、仓库上下文构建与缓存；
 | 面板显示已配置但未连接 | 完成一次浏览器授权即可 |
 | 工具结果里没有「仓库上下文」 | 传了 `withContext: false`，或 README/contents 读取失败（会自动跳过，不影响主结果） |
 | 并发工具偶发 401 | 0.8 起刷新已单飞；若仍出现，检查是否有第二个 DSH 实例在用同一 vault |
+| 面板只有标题、没有内容 | 1.0 起 200 非 JSON 会明确报错；通常是宿主还没加载本插件路由，重启 DSH 后重试 |
+| 授权弹窗没有出现 | 浏览器拦截弹窗；1.0 起不会再跳走页面，允许本站弹窗后重试，或点「取消等待授权」 |
+
+## 从 0.9 升级
+
+```bash
+dsh plugin --profile web add github:MFCJ45681/github-oauth-plugin   # 或 ./install.sh
+# 重启 DSH
+```
+
+加密库与账户数据向后兼容：0.8/0.9 的 vault 会被自动迁移为多账户结构，无需重新授权。

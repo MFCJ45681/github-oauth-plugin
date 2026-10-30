@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.0
+
+安全与性能版本：修掉审计发现的高危问题，客户端交互与可访问性同步收敛。
+
+### 修复
+
+- **跨账户缓存泄漏（严重）**：GET 缓存 key 加入 `sha256(token)` 指纹，切换账户后不会复用他人响应；缓存加上限（200 条）并在写入前清理过期项。
+- **CSRF 登出（严重）**：`/logout`、`/config`、`/accounts/*`、`POST /preferences` 只接受 POST，GET 返回 405；顶层导航无法再清空 token 或改配置。
+- **刷新令牌写错账户（严重）**：刷新前捕获 token 所属 login，await 后写回该账户；保留 scopes 与旧 refresh token；`requireAccessToken` 每轮重读活动 token，切换/登出后不会返回他人的令牌。
+- 截断响应返回 `E_TRUNCATED`，空响应体返回 `E_EMPTY`，不再伪装成成功或空列表。
+- `github_file` 拒绝空段、`.`、`..`；`encoding:"none"`（>1 MB）抛 `E_FILE_TOO_LARGE`。
+- `github_api_request` 对 GET/HEAD 带 body 直接返回 `E_INPUT`；新增 HEAD 方法。
+- 畸形 state cookie 不再 500；token 交换失败后 state 仍可重试。
+- 速率限制只在 403/429 且配额耗尽（或 message 含 rate limit）时判定。
+- `writeAtomic` 失败清理临时密文文件；`vault.update()` 跨进程加锁；`removeAccount` 对未知 login 抛 `E_NOT_FOUND`。
+- 客户端：未配置时不再整页跳转；授权弹窗在点击内同步打开；「添加账户」可取消、失败即停；404 先看 `code` 再判断；轮询与刷新加序号防覆盖；事件携带 payload 减少重复 `/bootstrap`；`/accounts` 404 回退 `/status`。
+
+### 性能
+
+- `/status`、`/accounts` 各一次读 + 一次解密；仓库上下文与 API 缓存均有上限。
+- 授权轮询按可见时间计 5 分钟预算，后台标签页不消耗。
+- 输入框下拉只在等待授权或菜单打开时随窗口 focus 刷新。
+
+### 无障碍
+
+- 凭据与仓库输入框补 `aria-label`；错误用 `role="alert"`，成功/等待用 `aria-live`；`aria-haspopup` 改为 `menu`。
+- 侧边栏正文槽改用 `slots.inject`，右栏关闭/重开后正文不再丢失。
+
+### 测试
+
+- 新增 `test/regressions.test.js`（12 个用例）：缓存按 token 隔离、刷新落在 owner 账户、截断/空体、404 与配额、GET body、路径逃逸、大文件、GET 登出 405、畸形 cookie、state 重试、未知账户、随机 token 长度。
+- 全套 **58 个用例通过**。
+
 ## 0.9.4
 
 输入框按钮恢复投影，并把两个选项都改成滑动开关。
