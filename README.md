@@ -16,7 +16,7 @@ github-oauth-plugin/     ← 仓库根就是插件包，可直接被 dsh plugin 
 ├── scripts/configure.js
 ├── package.json
 ├── cordis.patch.yml
-├── test/                ← node:test，37 个用例
+├── test/                ← node:test，39 个用例
 ├── install.sh
 └── uninstall.sh
 ```
@@ -160,12 +160,13 @@ CSRF：浏览器流程要求 state cookie 与 `state` 参数一致；工具流�
 | 登录轮询 | 2 秒一次、后台标签页暂停、连接成功立即停止 |
 | 仓库上下文 | 按仓库缓存 60 秒，README 与文件树并行请求 |
 | 安装 | 内容哈希未变时跳过复制与 profile 改写，重复安装近乎瞬时 |
+| 目录检查 | `mkdir` + `chmod` 每个 VaultStore 只做一次；目录被删后写入会自动重建 |
 
 ## 测试
 
 ```bash
 npm test          # 等价于 node --test test/*.test.js
-# 37 pass
+# 39 pass
 ```
 
 覆盖：AES-GCM 往返/篡改/AAD、scrypt 派生、磁盘无明文与 `0600`、主密钥不匹配、state 一次性/过期/上限、

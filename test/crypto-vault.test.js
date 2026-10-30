@@ -156,3 +156,28 @@ test('pending states are single use, expire, and cap their size', () => {
   assert.equal(states.size, 3)
   assert.ok(states.create({ redirectUri: 'e', scope: 's' }).state.length >= 40)
 })
+
+test('the read cache notices an out-of-band write from another instance', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gho-cache-'))
+  const first = new VaultStore({ dataDir })
+  first.setPreferences({ defaultRepo: 'octocat/Hello-World' })
+  assert.equal(first.preferences().defaultRepo, 'octocat/Hello-World')
+
+  const second = new VaultStore({ dataDir })
+  second.setPreferences({ defaultRepo: 'octocat/Spoon-Knife' })
+
+  assert.equal(first.preferences().defaultRepo, 'octocat/Spoon-Knife', 'a rewrite by another instance must invalidate the cache')
+  assert.equal(second.preferences().defaultRepo, 'octocat/Spoon-Knife')
+})
+
+test('a write recreates a data directory removed after first use', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gho-rmdir-'))
+  const store = new VaultStore({ dataDir })
+  store.setPreferences({ defaultRepo: 'octocat/Hello-World' })
+  fs.rmSync(dataDir, { recursive: true, force: true })
+
+  store.setPreferences({ defaultRepo: 'octocat/Spoon-Knife' })
+  assert.equal(store.preferences().defaultRepo, 'octocat/Spoon-Knife')
+  assert.equal(fs.existsSync(path.join(dataDir, 'vault.json')), true)
+  assert.equal(fs.statSync(path.join(dataDir, 'vault.json')).mode & 0o777, 0o600)
+})

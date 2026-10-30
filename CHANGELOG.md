@@ -21,6 +21,8 @@
 
 - vault 读取按文件签名（`mtimeMs:size:ino:ctimeMs`）缓存解密结果；`status()` 从
   6 次同步读 + 6 次 AES-GCM 解密降到 1 次读 + 1 次解密。
+- 目录检查（`mkdir` + `chmod`）每个实例只做一次，读路径上少两个系统调用；
+  缓存按 inode 变化识别外部写入，目录被删后下次写入自动重建。
 - GitHub API 进程内共享 GET 缓存：工具默认 15 秒、`/repos` 30 秒，写操作清空缓存。
 - 面板新增 `GET /bootstrap`，一次返回 `{ status, preferences, repos }`，替代原来的
   `/status` + `/preferences` + `/repos` 三个请求；客户端 15 秒内复用。
@@ -36,5 +38,5 @@
 
 ### 测试
 
-37 个 `node:test` 用例（新增 `test/auth.test.js` 与 `test/context.test.js`），覆盖单飞刷新、
-上下文构建与缓存、`/bootstrap`、`withContext` 开关等。
+39 个 `node:test` 用例（新增 `test/auth.test.js` 与 `test/context.test.js`），覆盖单飞刷新、
+上下文构建与缓存、`/bootstrap`、`withContext` 开关、跨实例缓存失效与目录重建等。
