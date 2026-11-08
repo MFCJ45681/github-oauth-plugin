@@ -4,6 +4,13 @@
 条目按时间倒序排列；每次发布都在 [Releases](https://github.com/MFCJ45681/github-oauth-plugin/releases) 打 tag，
 下面按**变更主题**分组（越靠前越新），不再使用版本号标注。
 
+## 图标与降级显示
+
+- 新增**内联 GitHub 图标**（SVG + `currentColor`），不依赖任何外部图片请求；右侧栏「+」面板的 GitHub 入口现在带图标。
+- 头像加载失败（离线、`avatars.githubusercontent.com` 被拦）或账号缺少 `avatarUrl` 时，自动回退为内联 GitHub 图标，不再显示浏览器的破图占位。
+- 输入框账户按钮、账户下拉列表、设置页账户列表统一使用同一个 `Avatar` 组件，尺寸固定 16 / 36，避免原图撑坏布局。
+- 回退图标带 `title`（`@login`），鼠标悬停可确认当前账户。
+
 ---
 
 ## 安全与性能加固
